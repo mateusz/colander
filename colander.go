@@ -9,21 +9,19 @@ import (
 	"net/url"
 	"os"
 	"text/tabwriter"
-	"time"
-
-	"golang.org/x/net/context"
-	"golang.org/x/time/rate"
 
 	"github.com/mateusz/sidereal/classifiers"
+	"github.com/mateusz/sidereal/regimes"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/load"
 )
 
 type config struct {
-	verbose    bool
-	wantedLoad int
-	backend    string
-	listenPort int
+	verbose             bool
+	wantedLoad          int
+	backend             string
+	listenPort          int
+	bucketRollingWindow int
 }
 
 var logger *log.Logger
@@ -47,16 +45,18 @@ func init() {
 	logger = log.New(os.Stdout, "", 0)
 
 	const (
-		wantedLoadHelp = "Total % of CPU utilisation to aim for when shaping the traffic"
-		verboseHelp    = "Enable verbose output"
-		backendHelp    = "Backend URI"
-		listenPortHelp = "Local HTTP listen port"
+		wantedLoadHelp          = "Total % of CPU utilisation to aim for when shaping the traffic"
+		verboseHelp             = "Enable verbose output"
+		backendHelp             = "Backend URI"
+		listenPortHelp          = "Local HTTP listen port"
+		bucketRollingWindowHelp = "Number of samples to keep in the bucket rolling window for both RPS and response time"
 	)
 	conf = &config{}
 	flag.BoolVar(&conf.verbose, "verbose", true, verboseHelp)
 	flag.IntVar(&conf.wantedLoad, "wanted-load", 120, wantedLoadHelp)
 	flag.StringVar(&conf.backend, "backend", "http://localhost:80", backendHelp)
 	flag.IntVar(&conf.listenPort, "listen-port", 8888, listenPortHelp)
+	flag.IntVar(&conf.bucketRollingWindow, "bucket-rolling-window", 10, bucketRollingWindowHelp)
 	flag.Parse()
 
 	if conf.verbose {
@@ -66,25 +66,22 @@ func init() {
 		fmt.Fprintf(tw, "%d\t - %s\f", conf.wantedLoad, wantedLoadHelp)
 		fmt.Fprintf(tw, "%s\t - %s\f", conf.backend, backendHelp)
 		fmt.Fprintf(tw, "%d\t - %s\f", conf.listenPort, listenPortHelp)
+		fmt.Fprintf(tw, "%d\t - %s\f", conf.bucketRollingWindow, bucketRollingWindowHelp)
 	}
 }
 
 func middleware(h http.Handler) http.Handler {
-	c := classifiers.NewCrawler(logger)
-	// 1.0rps, 10 burst (bucket depth)
-	crawlerBucket := rate.NewLimiter(1.0, 10)
+	crawler := classifiers.NewCrawler(logger)
+	green := regimes.NewGreen(h, logger)
+	prio1 := regimes.NewBucket(1, conf.bucketRollingWindow)
+	prio2 := regimes.NewBucket(2, conf.bucketRollingWindow)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if c.Belongs(r) {
-			// Max wait 10s (i.e. permit if the queue length, considering rps and burst, is less than 10s,
-			// Otherwise fail outright.
-			ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-			err := crawlerBucket.Wait(ctx)
-			if err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
+		bucket := prio1
+		if crawler.Belongs(r) {
+			bucket = prio2
 		}
-		h.ServeHTTP(w, r)
+
+		green.ServeHTTP(w, r, bucket)
 	})
 }
 
