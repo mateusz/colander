@@ -3,21 +3,20 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"text/tabwriter"
 
-	"github.com/mateusz/sidereal/classifiers"
-	"github.com/mateusz/sidereal/regimes"
+	log "github.com/Sirupsen/logrus"
+	"github.com/mateusz/colander/shaper"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/load"
 )
 
 type config struct {
-	verbose             bool
+	debug               bool
 	wantedLoad          int
 	backend             string
 	listenPort          int
@@ -42,46 +41,46 @@ func utilisation() (int, error) {
 }
 
 func init() {
-	logger = log.New(os.Stdout, "", 0)
+	log.SetOutput(os.Stderr)
+	log.SetLevel(log.WarnLevel)
 
 	const (
 		wantedLoadHelp          = "Total % of CPU utilisation to aim for when shaping the traffic"
-		verboseHelp             = "Enable verbose output"
+		debugHelp               = "Enable debug output"
 		backendHelp             = "Backend URI"
 		listenPortHelp          = "Local HTTP listen port"
 		bucketRollingWindowHelp = "Number of samples to keep in the bucket rolling window for both RPS and response time"
 	)
 	conf = &config{}
-	flag.BoolVar(&conf.verbose, "verbose", true, verboseHelp)
+	flag.BoolVar(&conf.debug, "debug", false, debugHelp)
 	flag.IntVar(&conf.wantedLoad, "wanted-load", 120, wantedLoadHelp)
 	flag.StringVar(&conf.backend, "backend", "http://localhost:80", backendHelp)
 	flag.IntVar(&conf.listenPort, "listen-port", 8888, listenPortHelp)
 	flag.IntVar(&conf.bucketRollingWindow, "bucket-rolling-window", 10, bucketRollingWindowHelp)
 	flag.Parse()
 
-	if conf.verbose {
+	if conf.debug {
 		tw := tabwriter.NewWriter(os.Stdout, 24, 4, 1, ' ', tabwriter.AlignRight)
 		fmt.Fprintf(tw, "Value\t   Option\f")
-		fmt.Fprintf(tw, "%t\t - %s\f", conf.verbose, verboseHelp)
+		fmt.Fprintf(tw, "%t\t - %s\f", conf.debug, debugHelp)
 		fmt.Fprintf(tw, "%d\t - %s\f", conf.wantedLoad, wantedLoadHelp)
 		fmt.Fprintf(tw, "%s\t - %s\f", conf.backend, backendHelp)
 		fmt.Fprintf(tw, "%d\t - %s\f", conf.listenPort, listenPortHelp)
 		fmt.Fprintf(tw, "%d\t - %s\f", conf.bucketRollingWindow, bucketRollingWindowHelp)
+
+		log.SetLevel(log.DebugLevel)
 	}
 }
 
 func middleware(h http.Handler) http.Handler {
-	crawler := classifiers.NewCrawler(logger)
-	green := regimes.NewGreen(h, logger)
-	prio1 := regimes.NewBucket(1, conf.bucketRollingWindow)
-	prio2 := regimes.NewBucket(2, conf.bucketRollingWindow)
+	classifier := shaper.ClassifierFunc(func(r *http.Request) shaper.Class {
+		return shaper.Class(1)
+	})
+	green := shaper.NewGreen(h)
+	shaper := shaper.New(classifier, green)
+	shaper.BucketRollingWindow = conf.bucketRollingWindow
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bucket := prio1
-		if crawler.Belongs(r) {
-			bucket = prio2
-		}
-
-		green.ServeHTTP(w, r, bucket)
+		shaper.ServeHTTP(w, r)
 	})
 }
 

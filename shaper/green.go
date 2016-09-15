@@ -1,35 +1,36 @@
-package regimes
+package shaper
 
 import (
-	"log"
 	"net/http"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
-// Green regime is a counting regime which should be used for
+// Green is counting-only regime which should be used for
 // establishing the baseline RpsAvg and RespTimeAvg.
 // It is not intended for any traffic shaping, and should only
 // be used if the server is under "normal" operating conditions,
 // i.e. is not under load.
 type Green struct {
 	Handler             http.Handler
-	logger              *log.Logger
+	Verbose             bool
 	countWindowStart    time.Time
 	reqCount            int64
 	countWindowDuration time.Duration
 }
 
-func NewGreen(h http.Handler, logger *log.Logger) *Green {
+func NewGreen(h http.Handler) *Green {
 	return &Green{
 		Handler:             h,
-		logger:              logger,
+		Verbose:             false,
 		countWindowStart:    time.Now(),
 		reqCount:            0,
 		countWindowDuration: time.Second,
 	}
 }
 
-func (g *Green) ServeHTTP(w http.ResponseWriter, r *http.Request, b *Bucket) {
+func (g *Green) ShapeHTTP(b *Bucket, w http.ResponseWriter, r *http.Request) {
 	// One Rps sample is obtained by calculating amount of requests in the window,
 	// where the window is at minimum g.countWindowDuration. This could lead to
 	// odd sampling if requests are infrequent, in which case the average will take longer
@@ -51,5 +52,9 @@ func (g *Green) ServeHTTP(w http.ResponseWriter, r *http.Request, b *Bucket) {
 	reqTime := time.Since(start)
 	b.addRespTimeSample(reqTime)
 
-	g.logger.Printf("Class: %d, RpsAvg: %f, RespTimeAvg: %dms\n", b.Class, b.RpsAvg, b.RespTimeAvg/time.Millisecond)
+	log.WithFields(log.Fields{
+		"Class":       b.Class,
+		"RpsAvg":      b.RpsAvg,
+		"RespTimeAvg": b.RespTimeAvg,
+	}).Debug("Request processed")
 }

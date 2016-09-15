@@ -1,7 +1,7 @@
-package classifiers
+package deciders
 
 import "net/http"
 
-type Classifier interface {
+type Decider interface {
 	Belongs(r *http.Request) bool
 }

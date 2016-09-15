@@ -1,4 +1,4 @@
-package classifiers
+package decider
 
 import (
 	"log"

@@ -1,4 +1,4 @@
-package regimes
+package shaper
 
 import (
 	"time"
@@ -9,14 +9,14 @@ import (
 // Bucket keeps track of all state per a single traffic class.
 // This information is required for the Regime to operate.
 type Bucket struct {
-	Class         int
+	Class         Class
 	RollingWindow int
 	RpsAvg        float64
 	RespTimeAvg   time.Duration
 	Limiter       *rate.Limiter
 }
 
-func NewBucket(c int, rw int) *Bucket {
+func NewBucket(c Class, rw int) *Bucket {
 	return &Bucket{
 		Class:         c,
 		RollingWindow: rw,
