@@ -1,6 +1,6 @@
 set terminal jpeg size 500,500
 set size 1, 1
-set output "ab.jpg"
+set output "distrib.jpg"
 set title "Benchmark testing"
 set key left top
 set grid y
@@ -10,6 +10,6 @@ set format x "%S"
 set xlabel 'seconds'
 set ylabel "response time (ms)"
 set datafile separator '\t'
-set yrange [1000 : 12000]
+set yrange [0 : 15000]
 plot "ab.tsv" every ::2 using 2:5 title 'response time' with points
 exit

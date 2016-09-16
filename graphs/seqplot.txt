@@ -1,0 +1,12 @@
+set terminal jpeg size 500,500
+set size 1, 1
+set output "seq.jpg"
+set title "Benchmark testing"
+set key left top
+set grid y
+set xlabel 'requests'
+set ylabel "response time (ms)"
+set datafile separator '\t'
+set yrange [0 : 15000]
+plot "ab.tsv" every ::2 using 5 title 'response time' with lines
+exit
