@@ -1,6 +1,7 @@
 package shaper
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 // i.e. is not under load.
 type Green struct {
 	Handler             http.Handler
-	Verbose             bool
 	countWindowStart    time.Time
 	reqCount            int64
 	countWindowDuration time.Duration
@@ -23,11 +23,14 @@ type Green struct {
 func NewGreen(h http.Handler) *Green {
 	return &Green{
 		Handler:             h,
-		Verbose:             false,
 		countWindowStart:    time.Now(),
 		reqCount:            0,
 		countWindowDuration: time.Second,
 	}
+}
+
+func (g *Green) String() string {
+	return fmt.Sprintf("Green")
 }
 
 func (g *Green) ShapeHTTP(b *Bucket, w http.ResponseWriter, r *http.Request) {
@@ -53,8 +56,7 @@ func (g *Green) ShapeHTTP(b *Bucket, w http.ResponseWriter, r *http.Request) {
 	b.addRespTimeSample(reqTime)
 
 	log.WithFields(log.Fields{
-		"Class":       b.Class,
-		"RpsAvg":      b.RpsAvg,
-		"RespTimeAvg": b.RespTimeAvg,
+		"Class":  b.Class,
+		"Regime": g,
 	}).Debug("Request processed")
 }
